@@ -1,5 +1,5 @@
-from datetime import date, datetime, timezone, timedelta
-from typing import Dict
+from datetime import date, datetime, timezone, timedelta, datetime
+from typing import Dict, List, Tuple
 import calendar
 from pathlib import Path
 import sys
@@ -10,28 +10,16 @@ DB_PATH = BASE_DIR / "calories.db"
 
 
 class PeriodAnalyzer:
-    """Анализатор периодов с настраиваемыми параметрами пользователя"""
-
-    def __init__(self, bmr_params: Dict[str, int] = None):
-        """
-        Args:
-            bmr_params: словарь с параметрами пользователя {'age': int, 'height': int, 'weight': int}
-                        Если не передан, использует значения по умолчанию
-        """
+    def __init__(self):
         self.conn = sqlite3.connect(DB_PATH)
-        self.bmr_params = bmr_params or {
-            'age': 30,
-            'height': 175,
-            'weight': 75
-        }
 
-    def get_week_range(self, target_date: date) -> tuple[date, date]:
+    def get_week_range(self, target_date: date) -> Tuple[date, date]:
         """Возвращает начало и конец недели (пн-вс) для даты"""
         monday = target_date - timedelta(days=target_date.weekday())
         sunday = monday + timedelta(days=6)
         return monday, sunday
 
-    def get_month_range(self, target_date: date) -> tuple[date, date]:
+    def get_month_range(self, target_date: date) -> Tuple[date, date]:
         """Возвращает начало и конец месяца для даты"""
         first_day = date(target_date.year, target_date.month, 1)
         last_day = date(target_date.year, target_date.month,
@@ -54,7 +42,7 @@ class PeriodAnalyzer:
 
         # Активность
         cursor.execute("""
-            SELECT SUM(steps), SUM(pullups), SUM(pushups), SUM(squats)
+            SELECT SUM(steps), SUM(pullups), SUM(pushups), SUM(squats), SUM(situps)
             FROM activity_log WHERE date >= ? AND date <= ?
         """, (start_date.isoformat(), end_date.isoformat()))
 
@@ -63,6 +51,7 @@ class PeriodAnalyzer:
         total_pullups = row[1] or 0
         total_pushups = row[2] or 0
         total_squats = row[3] or 0
+        total_situps = row[4] or 0
 
         # BMR * количество дней
         period_days = (end_date - start_date).days + 1
@@ -71,7 +60,7 @@ class PeriodAnalyzer:
 
         # Калории от активности
         activity_cal = self._calculate_activity_calories(
-            total_steps or 0, total_pullups or 0, total_pushups or 0, total_squats or 0
+            total_steps or 0, total_pullups or 0, total_pushups or 0, total_squats or 0, total_situps or 0
         )
 
         total_burned = total_bmr + activity_cal
@@ -90,22 +79,20 @@ class PeriodAnalyzer:
                 'total_steps': total_steps,
                 'total_pullups': total_pullups,
                 'total_pushups': total_pushups,
-                'total_squats': total_squats
+                'total_squats': total_squats,
+                'total_situps': total_situps
             }
         }
 
     def _calculate_bmr(self) -> float:
         """BMR по формуле Миффлина-Сан-Жеора (мужчины)"""
-        age = self.bmr_params.get('age', 30)
-        height = self.bmr_params.get('height', 175)
-        weight = self.bmr_params.get('weight', 75)
-        return 10 * weight + 6.25 * height - 5 * age + 5
+        # age: 46, height: 187, weight: 101
+        return 10 * 101 + 6.25 * 187 - 5 * 46 + 5
 
-    def _calculate_activity_calories(self, steps: int, pullups: int, pushups: int, squats: int) -> float:
+    def _calculate_activity_calories(self, steps: int, pullups: int, pushups: int, squats: int, situps: int) -> float:
         """Расчет калорий на активность"""
-        weight = self.bmr_params.get('weight', 75)
         # Шаги: 0.5 ккал на кг на 1000 шагов
-        steps_cal = (steps / 1000) * 0.5 * weight
+        steps_cal = (steps / 1000) * 0.5 * 101
 
         # Подтягивания: ~3 ккал за повторение
         pullups_cal = pullups * 3
@@ -116,7 +103,10 @@ class PeriodAnalyzer:
         # Приседания: ~1.5 ккал за повторение
         squats_cal = squats * 1.5
 
-        return steps_cal + pullups_cal + pushups_cal + squats_cal
+        # Подъем корпуса на пресс: ~1 ккал за повторение
+        situps_cal = situps * 1
+
+        return steps_cal + pullups_cal + pushups_cal + squats_cal + situps_cal
 
     def close(self):
         self.conn.close()
@@ -146,5 +136,8 @@ def format_period_report(stats: Dict, period_name: str) -> str:
 
     if stats['activity']['total_squats']:
         report += f"  🦵 Приседания: {stats['activity']['total_squats']}\n"
+
+    if stats['activity']['total_situps']:
+        report += f"  💪 Пресс: {stats['activity']['total_situps']}\n"
 
     return report
