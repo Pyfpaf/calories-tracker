@@ -42,6 +42,7 @@ def init_db():
             pullups INTEGER,
             pushups INTEGER,
             squats INTEGER,
+            situps INTEGER,
             calories_burned REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -50,13 +51,13 @@ def init_db():
     conn.close()
 
 
-def load_foods() -> Dict[str, float]:
+def load_foods() -> Dict[str, Dict[str, float]]:
     """Загрузить базу калорийности"""
     with open(FOODS_PATH, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
-def save_foods(foods: Dict[str, float]):
+def save_foods(foods: Dict[str, Dict[str, float]]):
     """Сохранить базу калорийности"""
     with open(FOODS_PATH, 'w', encoding='utf-8') as f:
         json.dump(foods, f, ensure_ascii=False, indent=2)
@@ -87,18 +88,25 @@ def parse_food_message(message: str) -> List[Tuple[str, float, str, float]]:
             continue
 
         # Расчет калорий
-        calories_per_100g = foods[product_key]
+        food_data = foods[product_key]
+        calories_per_100g = food_data['calories']
 
-        # Определяем единицу измерения
+        # Определяем вес в граммах
         if unit == 'шт' or unit is None:
-            # Для штук и без единицы — как порция 100 г
-            actual_unit = 'шт'
-            calories = (calories_per_100g / 100) * (value * 100)
+            # Для штук и без единицы — используем grams_per_piece если есть
+            if 'grams_per_piece' in food_data:
+                weight_grams = value * food_data['grams_per_piece']
+                actual_unit = 'шт'
+            else:
+                # Если нет коэффициента, считаем как 100г за штуку (старое поведение)
+                weight_grams = value * 100
+                actual_unit = 'шт'
         else:
-            # Для г/мл
+            # Для г/мл — указанный вес
+            weight_grams = value
             actual_unit = unit
-            calories = (calories_per_100g / 100) * value
 
+        calories = (calories_per_100g / 100) * weight_grams
         entries.append((product_key, value, actual_unit, calories))
 
     return entries
@@ -108,15 +116,57 @@ def find_closest_food(product: str, available: List[str]) -> Optional[str]:
     """Найти ближайший продукт по названию"""
     product = product.lower().strip()
 
-    # Специальные правила для популярных мн.ч.
+    # Специальные правила для популярных мн.ч. и синонимов
     special_rules = {
         'огурцов': 'огурец',
+        'огурца': 'огурец',
+        'огурцы': 'огурец',
         'капусты': 'капуста',
         'помидор': 'помидор',
+        'помидоры': 'помидор',
+        'помидора': 'помидор',
         'картофель': 'картофель',
+        'картофеля': 'картофель',
+        'картофелин': 'картофель',
         'яиц': 'яйцо вареное',
         'яйца': 'яйцо вареное',
+        'яйцо': 'яйцо вареное',
+        'яйца вареного': 'яйцо вареное',
         'морской капусты': 'морская капуста',
+        'морская капуста': 'морская капуста',
+        # Вареные продукты
+        'вареного картофеля': 'картофель',
+        'вареной картошки': 'картофель',
+        'вареный картофель': 'картофель',
+        'вареная картошка': 'картофель',
+        'вареной курицы': 'куриная грудка',
+        'вареная курица': 'куриная грудка',
+        'куриное': 'куриная грудка',
+        'куриное мясо': 'куриная грудка',
+        'курицы': 'куриная грудка',
+        # Множественное число
+        'творога': 'творог',
+        'гречи': 'греча',
+        'риса': 'рис',
+        'овсянки': 'овсянка',
+        'банана': 'банан',
+        'бананы': 'банан',
+        'яблок': 'яблоко',
+        'яблоки': 'яблоко',
+        'молока': 'молоко',
+        'кефира': 'кефир',
+        'сыра': 'сыр',
+        'хлеба': 'хлеб',
+        'макарон': 'макароны',
+        'макароны': 'макароны',
+        'свина': 'свина',
+        'свинина': 'свина',
+        'масло': 'масло сливочное',
+        'сливочное масло': 'масло сливочное',
+        'масла': 'масло сливочное',
+        # Пицца и синонимы
+        'пиццы': 'пицца',
+        'пицца': 'пицца',
     }
 
     if product in special_rules:
@@ -189,8 +239,10 @@ def log_activity(message: str, target_date: Optional[date] = None):
     pullups = 0
     pushups = 0
     squats = 0
+    situps = 0
+    rollerskating = 0
 
-    # Парсинг: "шагов 8500, подтягивания 10, отжимания 30, приседания 60"
+    # Парсинг: "шагов 8500, подтягивания 10, отжимания 30, приседания 60, подъем корпуса на пресс 120"
     if 'шаг' in message:
         m = re.search(r'шаг[\w]*\s*(\d+)', message, re.IGNORECASE)
         if m:
@@ -211,25 +263,40 @@ def log_activity(message: str, target_date: Optional[date] = None):
         if m:
             squats = int(m.group(1))
 
+    if 'пресс' in message or 'situp' in message.lower():
+        m = re.search(r'пресс[\w]*\s*(\d+)', message, re.IGNORECASE)
+        if m:
+            situps = int(m.group(1))
+
+    if 'ролик' in message or 'roller' in message.lower():
+        m = re.search(r'ролик[\w]*\s*(\d+)', message, re.IGNORECASE)
+        if m:
+            rollerskating = int(m.group(1))
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     c.execute("""
-        INSERT INTO activity_log (date, steps, pullups, pushups, squats)
-        VALUES (?, ?, ?, ?, ?)
-    """, (target_date.isoformat(), steps, pullups, pushups, squats))
+        INSERT INTO activity_log (date, steps, pullups, pushups, squats, situps, rollerskating)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (target_date.isoformat(), steps, pullups, pushups, squats, situps, rollerskating))
 
     conn.commit()
     conn.close()
 
 
-def calculate_bmr(age: int, height: int, weight: int) -> float:
+def calculate_bmr(age: int = 46, height: int = 187, weight: int = 101) -> float:
     """BMR по формуле Миффлина-Сан-Жеора (мужчины)"""
     return 10 * weight + 6.25 * height - 5 * age + 5
 
 
-def calculate_activity_calories(steps: int, pullups: int, pushups: int, squats: int, weight: int) -> float:
+def calculate_activity_calories(steps: int, pullups: int, pushups: int, squats: int, situps: int = None, rollerskating: int = None, weight: int = 101) -> float:
     """Расчет калорий на активность"""
+    if situps is None:
+        situps = 0
+    if rollerskating is None:
+        rollerskating = 0
+
     # Шаги: 0.5 ккал на кг на 1000 шагов
     steps_cal = (steps / 1000) * 0.5 * weight
 
@@ -242,58 +309,68 @@ def calculate_activity_calories(steps: int, pullups: int, pushups: int, squats: 
     # Приседания: ~1.5 ккал за повторение
     squats_cal = squats * 1.5
 
-    return steps_cal + pullups_cal + pushups_cal + squats_cal
+    # Подъем корпуса на пресс: ~1 ккал за повторение
+    situps_cal = situps * 1
+
+    # Ролики: ~4 ккал на км при среднем темпе
+    rollerskating_cal = rollerskating * 4 / 1000
+
+    return steps_cal + pullups_cal + pushups_cal + squats_cal + situps_cal + rollerskating_cal
 
 
-def get_daily_summary(target_date: date, bmr_params: Dict[str, int]) -> Dict:
-    """Получить статистику за день
-
-    Args:
-        target_date: дата отчета
-        bmr_params: словарь с параметрами пользователя {'age': int, 'height': int, 'weight': int}
-
-    Returns:
-        словарь со статистикой
-    """
-    age = bmr_params.get('age', 30)
-    height = bmr_params.get('height', 175)
-    weight = bmr_params.get('weight', 75)
-
+def get_daily_summary(target_date: date) -> Dict:
+    """Получить статистику за день"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     # Съедено
     c.execute("""
-        SELECT SUM(calories), GROUP_CONCAT(
-            product || '(' ||
-            CASE WHEN weight = CAST(weight AS INTEGER) THEN CAST(weight AS INTEGER)
-            ELSE weight END || COALESCE(unit, 'г') || ')', ', '
-        )
+        SELECT product,
+               SUM(weight) as total_weight,
+               unit,
+               SUM(calories) as total_calories
         FROM food_log WHERE date = ?
+        GROUP BY product, unit
+        ORDER BY total_calories DESC
     """, (target_date.isoformat(),))
 
-    row = c.fetchone()
-    eaten_cal = row[0] or 0
-    eaten_details = row[1] or ""
+    rows = c.fetchall()
+    eaten_cal = sum(row[3] for row in rows) if rows else 0
 
-    # Активность
+    # Форматируем детали с суммированием по продуктам
+    details_list = []
+    for product, total_weight, unit, total_calories in rows:
+        # Убираем дробную часть если целое число
+        if total_weight == int(total_weight):
+            weight_display = int(total_weight)
+        else:
+            weight_display = total_weight
+        details_list.append(f"{product}({weight_display}{unit})")
+    eaten_details = ", ".join(details_list)
+
+    # Активность - суммируем все записи за день
     c.execute("""
-        SELECT steps, pullups, pushups, squats
+        SELECT SUM(steps), SUM(pullups), SUM(pushups), SUM(squats), SUM(situps), SUM(rollerskating)
         FROM activity_log WHERE date = ?
     """, (target_date.isoformat(),))
 
     row = c.fetchone()
 
     if row:
-        steps, pullups, pushups, squats = row
+        steps = row[0] or 0
+        pullups = row[1] or 0
+        pushups = row[2] or 0
+        squats = row[3] or 0
+        situps = row[4] or 0
+        rollerskating = row[5] or 0
     else:
-        steps = pullups = pushups = squats = 0
+        steps = pullups = pushups = squats = situps = rollerskating = 0
 
     conn.close()
 
     # Расчеты
-    bmr = calculate_bmr(age, height, weight)
-    activity_cal = calculate_activity_calories(steps, pullups, pushups, squats, weight)
+    bmr = calculate_bmr()
+    activity_cal = calculate_activity_calories(steps, pullups, pushups, squats, situps if situps else 0, rollerskating, weight=101)
     total_burned = bmr + activity_cal
     balance = eaten_cal - total_burned
 
@@ -308,14 +385,16 @@ def get_daily_summary(target_date: date, bmr_params: Dict[str, int]) -> Dict:
             'steps': steps,
             'pullups': pullups,
             'pushups': pushups,
-            'squats': squats
+            'squats': squats,
+            'situps': situps,
+            'rollerskating': rollerskating
         }
     }
 
 
-def generate_report(target_date: date, bmr_params: Dict[str, int]) -> str:
+def generate_report(target_date: date) -> str:
     """Сгенерировать отчет"""
-    summary = get_daily_summary(target_date, bmr_params)
+    summary = get_daily_summary(target_date)
 
     if not summary['eaten_details']:
         return None
@@ -343,6 +422,12 @@ def generate_report(target_date: date, bmr_params: Dict[str, int]) -> str:
     if summary['activity']['squats']:
         report += f"🦵 Приседания: {summary['activity']['squats']}\n"
 
+    if summary['activity']['situps']:
+        report += f"💪 Пресс: {summary['activity']['situps']}\n"
+
+    if summary['activity']['rollerskating']:
+        report += f"⛸ Ролики: {summary['activity']['rollerskating']}м\n"
+
     return report
 
 
@@ -363,36 +448,22 @@ def main():
 
     if len(sys.argv) < 2:
         print("Использование:")
-        print("  python tracker.py food '200 г творог, 3 персика' [--date YYYY-MM-DD] [--bmr age=XX height=XX weight=XX]")
+        print("  python tracker.py food '200 г творог, 3 персика' [--date YYYY-MM-DD]")
         print("  python tracker.py activity 'шагов 8500, подтягивания 10' [--date YYYY-MM-DD]")
-        print("  python tracker.py report [--date YYYY-MM-DD] [--bmr age=XX height=XX weight=XX]")
+        print("  python tracker.py report [--date YYYY-MM-DD]")
         return
 
     cmd = sys.argv[1]
     target_date = None
-    bmr_params = {}
 
-    # Парсинг аргументов
-    i = 2
-    while i < len(sys.argv):
-        if sys.argv[i] == '--date' and i + 1 < len(sys.argv):
-            target_date = date.fromisoformat(sys.argv[i + 1])
-            i += 2
-        elif sys.argv[i] == '--bmr' and i + 1 < len(sys.argv):
-            # Парсинг age=XX height=XX weight=XX
-            for param in sys.argv[i + 1].split():
-                key, value = param.split('=')
-                bmr_params[key] = int(value)
-            i += 2
-        else:
-            i += 1
+    if '--date' in sys.argv:
+        idx = sys.argv.index('--date')
+        target_date = date.fromisoformat(sys.argv[idx + 1])
 
     if cmd == 'food':
         message = ' '.join(sys.argv[2:])
-        # Убираем флаги из сообщения
-        for flag in ['--date', '--bmr']:
-            if flag in message:
-                message = message.split(flag)[0].strip()
+        if '--date' in message:
+            message = message.split('--date')[0].strip()
 
         entries = log_food(message, target_date)
         print(f"✅ Добавлено: {len(entries)} записей")
@@ -402,19 +473,17 @@ def main():
 
     elif cmd == 'activity':
         message = ' '.join(sys.argv[2:])
-        # Убираем флаги из сообщения
-        for flag in ['--date', '--bmr']:
-            if flag in message:
-                message = message.split(flag)[0].strip()
+        if '--date' in message:
+            message = message.split('--date')[0].strip()
 
         log_activity(message, target_date)
         print("✅ Активность записана")
 
     elif cmd == 'report':
         if not target_date:
-            target_date = date.today()
+            target_date = get_msk_date()
 
-        report = generate_report(target_date, bmr_params)
+        report = generate_report(target_date)
 
         if report:
             print(report)
