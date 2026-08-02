@@ -164,6 +164,9 @@ def find_closest_food(product: str, available: List[str]) -> Optional[str]:
         'масло': 'масло сливочное',
         'сливочное масло': 'масло сливочное',
         'масла': 'масло сливочное',
+        # Пицца и синонимы
+        'пиццы': 'пицца',
+        'пицца': 'пицца',
     }
 
     if product in special_rules:
@@ -237,6 +240,7 @@ def log_activity(message: str, target_date: Optional[date] = None):
     pushups = 0
     squats = 0
     situps = 0
+    rollerskating = 0
 
     # Парсинг: "шагов 8500, подтягивания 10, отжимания 30, приседания 60, подъем корпуса на пресс 120"
     if 'шаг' in message:
@@ -264,13 +268,18 @@ def log_activity(message: str, target_date: Optional[date] = None):
         if m:
             situps = int(m.group(1))
 
+    if 'ролик' in message or 'roller' in message.lower():
+        m = re.search(r'ролик[\w]*\s*(\d+)', message, re.IGNORECASE)
+        if m:
+            rollerskating = int(m.group(1))
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     c.execute("""
-        INSERT INTO activity_log (date, steps, pullups, pushups, squats, situps)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (target_date.isoformat(), steps, pullups, pushups, squats, situps))
+        INSERT INTO activity_log (date, steps, pullups, pushups, squats, situps, rollerskating)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (target_date.isoformat(), steps, pullups, pushups, squats, situps, rollerskating))
 
     conn.commit()
     conn.close()
@@ -281,10 +290,12 @@ def calculate_bmr(age: int = 46, height: int = 187, weight: int = 101) -> float:
     return 10 * weight + 6.25 * height - 5 * age + 5
 
 
-def calculate_activity_calories(steps: int, pullups: int, pushups: int, squats: int, situps: int = None, weight: int = 101) -> float:
+def calculate_activity_calories(steps: int, pullups: int, pushups: int, squats: int, situps: int = None, rollerskating: int = None, weight: int = 101) -> float:
     """Расчет калорий на активность"""
     if situps is None:
         situps = 0
+    if rollerskating is None:
+        rollerskating = 0
 
     # Шаги: 0.5 ккал на кг на 1000 шагов
     steps_cal = (steps / 1000) * 0.5 * weight
@@ -301,7 +312,10 @@ def calculate_activity_calories(steps: int, pullups: int, pushups: int, squats: 
     # Подъем корпуса на пресс: ~1 ккал за повторение
     situps_cal = situps * 1
 
-    return steps_cal + pullups_cal + pushups_cal + squats_cal + situps_cal
+    # Ролики: ~4 ккал на км при среднем темпе
+    rollerskating_cal = rollerskating * 4 / 1000
+
+    return steps_cal + pullups_cal + pushups_cal + squats_cal + situps_cal + rollerskating_cal
 
 
 def get_daily_summary(target_date: date) -> Dict:
@@ -311,36 +325,52 @@ def get_daily_summary(target_date: date) -> Dict:
 
     # Съедено
     c.execute("""
-        SELECT SUM(calories), GROUP_CONCAT(
-            product || '(' ||
-            CASE WHEN weight = CAST(weight AS INTEGER) THEN CAST(weight AS INTEGER)
-            ELSE weight END || COALESCE(unit, 'г') || ')', ', '
-        )
+        SELECT product,
+               SUM(weight) as total_weight,
+               unit,
+               SUM(calories) as total_calories
         FROM food_log WHERE date = ?
+        GROUP BY product, unit
+        ORDER BY total_calories DESC
     """, (target_date.isoformat(),))
 
-    row = c.fetchone()
-    eaten_cal = row[0] or 0
-    eaten_details = row[1] or ""
+    rows = c.fetchall()
+    eaten_cal = sum(row[3] for row in rows) if rows else 0
 
-    # Активность
+    # Форматируем детали с суммированием по продуктам
+    details_list = []
+    for product, total_weight, unit, total_calories in rows:
+        # Убираем дробную часть если целое число
+        if total_weight == int(total_weight):
+            weight_display = int(total_weight)
+        else:
+            weight_display = total_weight
+        details_list.append(f"{product}({weight_display}{unit})")
+    eaten_details = ", ".join(details_list)
+
+    # Активность - суммируем все записи за день
     c.execute("""
-        SELECT steps, pullups, pushups, squats, situps
+        SELECT SUM(steps), SUM(pullups), SUM(pushups), SUM(squats), SUM(situps), SUM(rollerskating)
         FROM activity_log WHERE date = ?
     """, (target_date.isoformat(),))
 
     row = c.fetchone()
 
     if row:
-        steps, pullups, pushups, squats, situps = row
+        steps = row[0] or 0
+        pullups = row[1] or 0
+        pushups = row[2] or 0
+        squats = row[3] or 0
+        situps = row[4] or 0
+        rollerskating = row[5] or 0
     else:
-        steps = pullups = pushups = squats = situps = 0
+        steps = pullups = pushups = squats = situps = rollerskating = 0
 
     conn.close()
 
     # Расчеты
     bmr = calculate_bmr()
-    activity_cal = calculate_activity_calories(steps, pullups, pushups, squats, situps if situps else 0, weight=101)
+    activity_cal = calculate_activity_calories(steps, pullups, pushups, squats, situps if situps else 0, rollerskating, weight=101)
     total_burned = bmr + activity_cal
     balance = eaten_cal - total_burned
 
@@ -356,7 +386,8 @@ def get_daily_summary(target_date: date) -> Dict:
             'pullups': pullups,
             'pushups': pushups,
             'squats': squats,
-            'situps': situps
+            'situps': situps,
+            'rollerskating': rollerskating
         }
     }
 
@@ -394,6 +425,9 @@ def generate_report(target_date: date) -> str:
     if summary['activity']['situps']:
         report += f"💪 Пресс: {summary['activity']['situps']}\n"
 
+    if summary['activity']['rollerskating']:
+        report += f"⛸ Ролики: {summary['activity']['rollerskating']}м\n"
+
     return report
 
 
@@ -417,7 +451,6 @@ def main():
         print("  python tracker.py food '200 г творог, 3 персика' [--date YYYY-MM-DD]")
         print("  python tracker.py activity 'шагов 8500, подтягивания 10' [--date YYYY-MM-DD]")
         print("  python tracker.py report [--date YYYY-MM-DD]")
-        print("  python tracker.py check --date YYYY-MM-DD")
         return
 
     cmd = sys.argv[1]
@@ -456,13 +489,6 @@ def main():
             print(report)
         else:
             print(f"⚠️ Нет данных за {target_date}")
-
-    elif cmd == 'check':
-        if not target_date:
-            target_date = date.today() - timezone.timedelta(days=1)
-
-        has_data = has_food_logs(target_date)
-        print(f"Data for {target_date}: {has_data}")
 
     else:
         print("Неизвестная команда")
