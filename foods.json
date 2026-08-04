@@ -1,105 +1,37 @@
 {
-  "творог": {
-    "calories": 110
-  },
-  "греча": {
-    "calories": 150
-  },
-  "греча с говядиной": {
-    "calories": 180
-  },
-  "персик": {
-    "calories": 90
-  },
-  "яйцо вареное": {
-    "calories": 155,
-    "grams_per_piece": 80
-  },
-  "куриная грудка": {
-    "calories": 165
-  },
-  "рис": {
-    "calories": 130
-  },
-  "овсянка": {
-    "calories": 350
-  },
-  "банан": {
-    "calories": 90
-  },
-  "яблоко": {
-    "calories": 50
-  },
-  "молоко": {
-    "calories": 65
-  },
-  "кефир": {
-    "calories": 60
-  },
-  "сыр": {
-    "calories": 360
-  },
-  "хлеб": {
-    "calories": 333,
-    "grams_per_piece": 30
-  },
-  "макароны": {
-    "calories": 140
-  },
-  "картофель": {
-    "calories": 80
-  },
-  "салат": {
-    "calories": 30
-  },
-  "огурец": {
-    "calories": 15,
-    "grams_per_piece": 80
-  },
-  "помидор": {
-    "calories": 20,
-    "grams_per_piece": 200
-  },
-  "колбаса": {
-    "calories": 300
-  },
-  "ветчина": {
-    "calories": 270
-  },
-  "миндаль": {
-    "calories": 580
-  },
-  "орехи грецкие": {
-    "calories": 650
-  },
-  "капуста": {
-    "calories": 28
-  },
-  "свина": {
-    "calories": 320
-  },
-  "масло сливочное": {
-    "calories": 750
-  },
-  "морская капуста": {
-    "calories": 33
-  },
-  "кофе": {
-    "calories": 5
-  },
-  "чай": {
-    "calories": 0
-  },
-  "вода": {
-    "calories": 0
-  },
-  "арахис": {
-    "calories": 650
-  },
-  "арбуз": {
-    "calories": 35
-  },
-  "пицца": {
-    "calories": 285
-  }
+  "творог": {"calories": 110},
+  "греча": {"calories": 150},
+  "греча с говядиной": {"calories": 180},
+  "персик": {"calories": 90},
+  "яйцо вареное": {"calories": 155, "grams_per_piece": 80},
+  "куриная грудка": {"calories": 165},
+  "рис": {"calories": 130},
+  "овсянка": {"calories": 350},
+  "банан": {"calories": 90},
+  "яблоко": {"calories": 50},
+  "молоко": {"calories": 65},
+  "кефир": {"calories": 60},
+  "сыр": {"calories": 360},
+  "хлеб": {"calories": 333, "grams_per_piece": 30},
+  "макароны": {"calories": 140},
+  "картофель": {"calories": 80},
+  "салат": {"calories": 30},
+  "огурец": {"calories": 15, "grams_per_piece": 80},
+  "помидор": {"calories": 20, "grams_per_piece": 200},
+  "колбаса": {"calories": 300},
+  "ветчина": {"calories": 270},
+  "миндаль": {"calories": 580},
+  "орехи грецкие": {"calories": 650},
+  "капуста": {"calories": 28},
+  "свина": {"calories": 320},
+  "масло сливочное": {"calories": 750},
+  "морская капуста": {"calories": 33},
+  "кофе": {"calories": 5},
+  "чай": {"calories": 0},
+  "вода": {"calories": 0},
+  "арахис": {"calories": 650},
+  "арбуз": {"calories": 35},
+  "пицца": {"calories": 285},
+  "овощной суп": {"calories": 55},
+  "протеиновый батончик": {"calories": 150, "grams_per_piece": 1}
 }
